@@ -11,25 +11,24 @@ def load_config():
 def print_demo_symbols():
     config = load_config()
 
-    # Initialize Kraken futures instance with demo environment URLs
-    kraken_futures = ccxt.krakenfutures({
-        'apiKey': config['kraken']['api_key'],
-        'secret': config['kraken']['api_secret'],
+    # Initialize phemex  futures instance with demo environment URLs
+    phemex_futures = ccxt.phemex({
+        'apiKey': config['phemex']['api_key'],
+        'secret': config['phemex']['api_secret'],
         'urls': {
             'api': {
-                'public': 'https://demo-futures.kraken.com/derivatives/api/',
-                'private': 'https://demo-futures.kraken.com/derivatives/api/',
+                'public': 'https://testnet-api.phemex.com',
             }
         }
     })
 
     try:
-        markets = kraken_futures.load_markets()
-        print("Available symbols on Kraken Futures Demo:")
+        markets = phemex_futures.load_markets()
+        print("Available symbols on phemex Futures Demo:")
         for symbol in markets:
             print(symbol)
     except Exception as e:
-        print(f"Error fetching symbols from Kraken Futures Demo: {e}")
+        print(f"Error fetching symbols from phemex Futures Demo: {e}")
 
 if __name__ == "__main__":
     print_demo_symbols()
