@@ -6,18 +6,26 @@ import time
 
 from datetime import datetime
 
+from utils import load_config
+
 from exchange_setup import initialize_exchange
 
 from indicators import calculate_vwap, calculate_ema
 
 
 
+# Load configuration
+
+config = load_config()
 
 phemex_futures = initialize_exchange()
 
 
-#set leverage
+
+# Set leverage
+
 phemex_futures.set_leverage(25, 'BTC/USD:BTC')
+
 
 
 def fetch_live_data(symbol, limit=20):
@@ -51,6 +59,7 @@ def calculate_tp_sl(order_type, current_price):
     sl_percentage = 0.01  # 1% Stop Loss
 
 
+
     if order_type == "SELL":
 
         take_profit_price = current_price * (1 - tp_percentage)
@@ -64,13 +73,14 @@ def calculate_tp_sl(order_type, current_price):
         stop_loss_price = current_price * (1 - sl_percentage)
 
 
+
     return round(take_profit_price, 5), round(stop_loss_price, 5)
+
 
 
 def execute_trade(order_type, amount, config, current_price): 
 
     """Execute a live trade with adjusted TP, SL, and a limit price."""
-
 
     try:
 
@@ -94,7 +104,7 @@ def execute_trade(order_type, amount, config, current_price):
 
             symbol=config['trade_parameters']['symbol'],
 
-            type="limit",  # Changed from "stop" to "limit" as it's a limit order
+            type="limit",
 
             side=order_type.lower(),
 
@@ -107,14 +117,20 @@ def execute_trade(order_type, amount, config, current_price):
         )
 
 
+
         # Determine the side for TP and SL orders
+
         tp_sl_side = "buy" if order_type == "SELL" else "sell"
+
+        
+
         # Place separate Stop Loss and Take Profit orders
+
         phemex_futures.create_order(
 
             symbol=config['trade_parameters']['symbol'],
 
-            type="stop",  # Changed from "stop-loss" to "stop"
+            type="stop",
 
             side=tp_sl_side,
 
@@ -125,6 +141,8 @@ def execute_trade(order_type, amount, config, current_price):
             params={"ordType": "Stop", "stopPx": stop_loss_price}
 
         )
+
+
 
         phemex_futures.create_order(
 
@@ -148,14 +166,7 @@ def execute_trade(order_type, amount, config, current_price):
 
         log_trade(order_type, amount, current_price, order)
 
-    except Exception as e:
 
-        print(f"[ERROR] Error placing {order_type} order: {e}")
-
-
-        print("Live", order_type, "order placed:", order)
-
-        log_trade(order_type, amount, current_price, order)
 
     except Exception as e:
 
@@ -165,7 +176,11 @@ def execute_trade(order_type, amount, config, current_price):
 
 def log_trade(order_type, amount, price, order=None):
 
-    global last_trade
+    """Log trade details."""
+
+    global last_trade  
+
+
 
     trade_data = {
 
@@ -194,6 +209,8 @@ def log_trade(order_type, amount, price, order=None):
         elif order_type == "BUY":
 
             trade_data["PnL"] = (last_trade["price"] - price) * amount
+
+        
 
         print(f"[TRADE] {order_type} at {price} with amount {amount}. PnL: {trade_data['PnL']:.2f}")
 
@@ -236,5 +253,3 @@ def log_trade(order_type, amount, price, order=None):
         print(f"Order Status: {order['status']}")
 
         print("=== End of Order Details ===\n")
-
-

@@ -16,7 +16,7 @@ class StateManager:
 
     def __init__(self, exchange):
 
-        self.exchange = exchange  # Store the exchange instance
+        self.exchange = exchange
 
         self.current_state = BotState.SEARCHING
 
@@ -26,23 +26,41 @@ class StateManager:
 
 
 
+    def get_open_positions(self):
+
+        """Fetch and return open positions."""
+
+        try:
+
+            all_positions = self.exchange.fetch_positions(params={'settle': 'USD'})
+
+            open_positions = [p for p in all_positions if float(p['contracts']) > 0]
+
+            return open_positions
+
+        except Exception as e:
+
+            print(f"Error fetching open positions: {e}")
+
+            return []
+
+
+
     def display_open_positions(self):
 
         try:
 
-            positions = self.exchange.fetch_positions()  # Use the exchange instance to fetch positions
+            positions = self.get_open_positions()
 
             print("\nOpen Positions:")
 
             for position in positions:
 
-                if float(position['contracts']) != 0:
-
-                    print(f"Symbol: {position['symbol']}, Side: {'Long' if position['side'] == 'long' else 'Short'}, Amount: {position['contracts']}")
+                print(f"Symbol: {position['symbol']}, Side: {position['side'].capitalize()}, Amount: {position['contracts']}")
 
         except Exception as e:
 
-            print(f"Error fetching positions: {e}")
+            print(f"Error displaying positions: {e}")
 
 
 
@@ -55,19 +73,3 @@ class StateManager:
             self.display_open_positions()
 
             self.last_position_check = current_time
-
-
-
-    def get_open_positions(self):
-
-        """Fetch and return open positions."""
-
-        try:
-
-            return self.exchange.fetch_positions()  # Use the exchange instance
-
-        except Exception as e:
-
-            print(f"Error fetching open positions: {e}")
-
-            return []
