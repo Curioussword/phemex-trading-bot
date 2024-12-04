@@ -1,4 +1,6 @@
-disclaimer - credits go to razaque-goraya Razaque Goraya who created the indicator logic and how it ties into the ccxt exchange. All credits go to him. I am just adding on top of it to work with phemex. More details to come soon.
+disclaimer - credits go to razaque-goraya Razaque Goraya who created the indicator logic and how it ties into the ccxt exchange. All credits go to him and was originally created to work with Kraken. Now it works with Phemex!
+
+I am just adding on top of it to work with phemex. More details to come soon.
 
 # phemex-Crypto-Trading-Bot
 
