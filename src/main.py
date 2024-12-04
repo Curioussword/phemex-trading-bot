@@ -6,13 +6,14 @@ import time
 
 from datetime import datetime
 
-from exchange_setup import initialize_exchange 
+from exchange_setup import initialize_exchange, load_config
 
 from indicators import calculate_vwap, calculate_ema
 
 from state_manager import StateManager
 
-from bot import fetch_live_data
+from bot import fetch_live_data, execute_trade
+
 
 
 def main():
@@ -23,6 +24,8 @@ def main():
 
     last_trade = None
 
+    #load configuration
+    config = load_config()
 
     # Initialize the Phemex exchange using the utility function
 
