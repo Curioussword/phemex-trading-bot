@@ -22,6 +22,8 @@ def main():
 
     global trade_log, last_trade
 
+
+
     trade_log = []
 
     last_trade = None
@@ -32,29 +34,29 @@ def main():
 
     config = load_config()
 
+    exchange = initialize_exchange()
 
-
-    # Initialize the Phemex exchange using the utility function
-
-    phemex_futures = initialize_exchange()
-
-
-
-    # Create a StateManager instance with the initialized exchange
-
-    state_manager = StateManager(phemex_futures)
+    state_manager = StateManager(exchange)
 
 
 
-    while True:  # Run continuously
+    while True: 
 
         try:
 
-            open_positions = state_manager.get_open_positions()
+            # Check and display open positions using the symbol from config
+
+            state_manager.check_and_display_positions(config['trade_parameters']['symbol'])
 
 
 
-            if len(open_positions) == 0 and len(trade_log) < config['trade_parameters']['max_orders_per_day']:
+            # Get open positions
+
+            open_positions = state_manager.get_open_positions(config['trade_parameters']['symbol'])
+
+
+
+            if len(open_positions) < 5 and len(trade_log) < config['trade_parameters']['max_orders_per_day']:
 
                 data = fetch_live_data(config['trade_parameters']['symbol'])
 
@@ -104,11 +106,9 @@ def main():
 
             else:
 
-                print("Open positions exist or max trades reached. Monitoring...")
+                print("Maximum open positions reached or max trades per day reached. Monitoring...")
 
 
-
-            state_manager.check_and_display_positions()
 
             time.sleep(60)  # Check every 60 seconds
 
