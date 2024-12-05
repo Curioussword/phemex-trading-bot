@@ -27,26 +27,41 @@ phemex_futures = initialize_exchange()
 phemex_futures.set_leverage(25, 'BTC/USD:BTC')
 
 
-
 def fetch_live_data(symbol, limit=20):
 
     """Fetch live market data from Phemex and format it as a DataFrame."""
 
     try:
 
-        print(f"[DEBUG] Fetching live data for symbol: {symbol}, limit: {limit}")
+        # Current timestamp in milliseconds
 
-        ohlcv = phemex_futures.fetch_ohlcv(symbol, timeframe='1m', limit=limit)
+        current_time = int(time.time() * 1000)
+
+        timeframe_ms = 60 * 1000  # 1 minute in milliseconds
+
+        since = current_time - (limit * timeframe_ms)
+
+        
+
+        # Fetch OHLCV data
+
+        ohlcv = phemex_futures.fetch_ohlcv(symbol, timeframe='1m', since=since)
+
 
         data = pd.DataFrame(ohlcv, columns=["timestamp", "open", "high", "low", "close", "volume"])
 
+        
+
         return data
+
+
 
     except Exception as e:
 
         print(f"[ERROR] Failed to fetch live data: {e}")
 
         return pd.DataFrame()
+
 
 
 
