@@ -1,0 +1,47 @@
+
+import ccxt
+
+
+
+# Initialize the Phemex exchange object without an API key
+
+phemex_futures = ccxt.phemex({
+
+    'urls': {
+
+        'api': {
+
+            'public': 'https://testnet-api.phemex.com/exchange/public',  # Use live API if needed
+
+            'private': 'https://testnet-api.phemex.com',  # Use live API if needed
+
+        }
+
+    },
+
+    'enableRateLimit': True,
+
+})
+
+
+
+symbol = 'BTCUSD'  # Make sure the symbol is valid
+
+timeframe = '1m'  # Use the appropriate timeframe
+
+limit = 21  # Number of data points to fetch
+
+
+
+try:
+
+    # Fetch OHLCV data without using an API key
+
+    ohlcv = phemex_futures.fetch_ohlcv(symbol, timeframe=timeframe, limit=limit)
+
+    print(ohlcv)
+
+except Exception as e:
+
+    print(f"[ERROR] Fetch OHLCV error: {e}")
+
