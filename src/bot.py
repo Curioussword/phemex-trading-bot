@@ -12,6 +12,10 @@ from exchange_setup import initialize_exchange
 
 from indicators import calculate_vwap, calculate_ema
 
+from state_manager import StateManager, get_positions_details
+
+
+
 
 
 # Load configuration
@@ -20,11 +24,13 @@ config = load_config()
 
 phemex_futures = initialize_exchange()
 
+state_manager = StateManager(phemex_futures)
 
+MAX_SIZE = config['trade_parameters']['max_size']
 
 # Set leverage
 
-phemex_futures.set_leverage(25, 'BTC/USD:BTC')
+phemex_futures.set_leverage(45, 'BTC/USD:BTC')
 
 
 def fetch_live_data(symbol, limit=20):
@@ -89,19 +95,36 @@ def calculate_tp_sl(order_type, current_price):
 
 
 
-    return round(take_profit_price, 5), round(stop_loss_price, 5)
+    return round(take_profit_price, 3), round(stop_loss_price, 2)
 
 
 
-def execute_trade(order_type, amount, config, current_price): 
 
-    """Execute a live trade with adjusted TP, SL, and a limit price."""
+def execute_trade(order_type, amount, config, current_price, exchange):
+
+    """Execute a trade with retry and error handling."""
 
     try:
 
+        symbol = config['trade_parameters']['symbol']
+
+        total_size, position_details = get_positions_details(exchange, symbol)
+
+
+
+        # Check if adding this trade exceeds MAX_SIZE
+
+        if total_size + amount > MAX_SIZE:
+
+            print(f"[WARNING] Max size exceeded. Current total: {total_size}, Attempted: {amount}, Max: {MAX_SIZE}")
+
+            return
+
+
+
         take_profit_price, stop_loss_price = calculate_tp_sl(order_type, current_price)
 
-        limit_price = round(current_price * (0.99 if order_type == "SELL" else 1.01), 5)  # Adjusted for precision
+        limit_price = round(current_price * (0.99 if order_type == "SELL" else 1.01), 5)
 
 
 
@@ -113,37 +136,85 @@ def execute_trade(order_type, amount, config, current_price):
 
 
 
-        # Place the main order
+        # Try placing a limit order
 
-        order = phemex_futures.create_order(
+        try:
 
-            symbol=config['trade_parameters']['symbol'],
+            order = exchange.create_order(
 
-            type="limit",
+                symbol=symbol,
 
-            side=order_type.lower(),
+                type="limit",
 
-            amount=amount,
+                side=order_type.lower(),
 
-            price=limit_price,
+                amount=amount,
 
-            params={"ordType": "Limit"}
+                price=limit_price,
 
-        )
+                params={"ordType": "Limit"}
+
+            )
+
+            print("[INFO] Limit order placed. Waiting for execution...")
+
+            time.sleep(2)
 
 
 
-        # Determine the side for TP and SL orders
+            # Check if the order was filled
+
+            order_status = exchange.fetch_order(order['id'], symbol)
+
+            if order_status.get('status') != 'closed':
+
+                print("[INFO] Limit order not filled. Canceling and retrying as market order...")
+
+                exchange.cancel_order(order['id'], symbol)
+
+                order = exchange.create_order(
+
+                    symbol=symbol,
+
+                    type="market",
+
+                    side=order_type.lower(),
+
+                    amount=amount,
+
+                    params={"ordType": "Market"}
+
+                )
+
+        except Exception as e:
+
+            print(f"[ERROR] Error placing limit order: {e}")
+
+            print("[INFO] Switching to market order...")
+
+            order = exchange.create_order(
+
+                symbol=symbol,
+
+                type="market",
+
+                side=order_type.lower(),
+
+                amount=amount,
+
+                params={"ordType": "Market"}
+
+            )
+
+
+
+        # Place Stop Loss and Take Profit orders
 
         tp_sl_side = "buy" if order_type == "SELL" else "sell"
 
-        
+        exchange.create_order(
 
-        # Place separate Stop Loss and Take Profit orders
-
-        phemex_futures.create_order(
-
-            symbol=config['trade_parameters']['symbol'],
+            symbol=symbol,
 
             type="stop",
 
@@ -159,9 +230,9 @@ def execute_trade(order_type, amount, config, current_price):
 
 
 
-        phemex_futures.create_order(
+        exchange.create_order(
 
-            symbol=config['trade_parameters']['symbol'],
+            symbol=symbol,
 
             type="limit",
 
@@ -177,15 +248,16 @@ def execute_trade(order_type, amount, config, current_price):
 
 
 
-        print("Live", order_type, "order placed:", order)
+        print(f"Trade executed successfully: Size: {amount}, Symbol: {symbol}, ID: {order.get('id', 'N/A')}")
 
         log_trade(order_type, amount, current_price, order)
 
 
 
-    except Exception as e:
+    except Exception as main_error:
 
-        print(f"[ERROR] Error placing {order_type} order: {e}")
+        print(f"[ERROR] Critical error in execute_trade: {main_error}")
+
 
 
 
