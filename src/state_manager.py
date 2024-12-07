@@ -1,16 +1,28 @@
 import time
 
-from enum import Enum
-
 import json
 
+from enum import Enum
 
+
+
+# Define shared constant
+
+POSITION_CHECK_INTERVAL = 180  # Interval to check positions (in seconds)
+
+
+
+
+
+# Bot States
 
 class BotState(Enum):
 
     SEARCHING = 1
 
     TRADING = 2
+
+
 
 
 
@@ -24,7 +36,7 @@ class StateManager:
 
         self.last_position_check = 0
 
-        self.position_check_interval = 180  # 3 minutes in seconds
+        self.position_check_interval = POSITION_CHECK_INTERVAL
 
 
 
@@ -40,51 +52,19 @@ class StateManager:
 
 
 
-            # Ensure response is a dictionary
-
             if isinstance(response, str):
 
                 response = json.loads(response)
 
 
 
-            # Check if 'data' exists in the response and is a dictionary
+            positions = response.get('data', {}).get('positions', [])
 
-            if 'data' not in response or not isinstance(response['data'], dict):
-
-                print("Unexpected API response structure: 'data' key not found or not a dictionary")
-
-                return []
-
-
-
-            # Access the positions list from the data dictionary
-
-            positions = response['data'].get('positions', [])
-
-            
-
-            # Check if positions is a list
-
-            if not isinstance(positions, list):
-
-                print("Unexpected structure for 'positions'. Expected a list.")
-
-                return []
-
-
-
-            return positions
-
-        except json.JSONDecodeError:
-
-            print("Error decoding JSON response")
-
-            return []
+            return positions if isinstance(positions, list) else []
 
         except Exception as e:
 
-            print(f"Error fetching account positions: {e}")
+            print(f"[ERROR] Error fetching account positions: {e}")
 
             return []
 
@@ -92,41 +72,17 @@ class StateManager:
 
     def get_open_positions(self, symbol):
 
-        """Extract open positions for a given symbol from account positions."""
+        """Extract open positions for a given symbol."""
 
-        try:
+        positions = self.get_account_positions()
 
-            account_positions = self.get_account_positions()
+        return [
 
+            p for p in positions
 
+            if p.get('symbol') == symbol and abs(float(p.get('size', 0))) > 0
 
-            if not isinstance(account_positions, list):
-
-                print("Unexpected type for account_positions. Expected list.")
-
-                return []
-
-
-
-            open_positions = [
-
-                p for p in account_positions 
-
-                if isinstance(p, dict) and 
-
-                p.get('symbol') == symbol and 
-
-                float(p.get('size', 0)) != 0
-
-            ]
-
-            return open_positions
-
-        except Exception as e:
-
-            print(f"Error extracting open positions: {e}")
-
-            return []
+        ]
 
 
 
@@ -134,51 +90,41 @@ class StateManager:
 
         """Display open positions for a given symbol along with PnL and leverage."""
 
-        try:
+        positions = self.get_open_positions(symbol)
 
-            positions = self.get_open_positions(symbol)
+        print("\nOpen Positions:")
 
-            print("\nOpen Positions:")
 
-            
 
-            if not positions:
+        if not positions:
 
-                print("No open positions found.")
-
-                return 0
-
-            
-
-            for position in positions:
-
-                pnl = float(position.get('cumClosedPnlEv', 0)) / 1e8  # Adjusting based on expected scale
-
-                leverage = float(position.get('leverage', 0))
-
-                
-
-                print(f"Symbol: {position.get('symbol', 'N/A')}, "
-
-                      f"Side: {'Long' if float(position.get('size', 0)) > 0 else 'Short'}, "
-
-                      f"Size: {abs(float(position.get('size', 0)))}, "
-
-                      f"Entry Price: {position.get('avgEntryPrice', 'N/A')}, "
-
-                      f"PnL: {pnl:.2f}, "
-
-                      f"Leverage: {leverage:.2f}")
-
-            
-
-            return len(positions)
-
-        except Exception as e:
-
-            print(f"Error displaying positions: {e}")
+            print("No open positions found.")
 
             return 0
+
+
+
+        for position in positions:
+
+            pnl = float(position.get('cumClosedPnlEv', 0)) / 1e8
+
+            leverage = float(position.get('leverage', 0))
+
+            print(f"Symbol: {position.get('symbol', 'N/A')}, "
+
+                  f"Side: {'Long' if float(position.get('size', 0)) > 0 else 'Short'}, "
+
+                  f"Size: {abs(float(position.get('size', 0)))}, "
+
+                  f"Entry Price: {position.get('avgEntryPrice', 'N/A')}, "
+
+                  f"PnL: {pnl:.2f}, "
+
+                  f"Leverage: {leverage:.2f}")
+
+
+
+        return len(positions)
 
 
 
@@ -194,14 +140,48 @@ class StateManager:
 
             if open_position_count >= 5:
 
-                print("Monitoring ongoing due to sufficient open positions.")
+                print("[INFO] Monitoring ongoing due to sufficient open positions.")
 
                 self.current_state = BotState.TRADING
 
             else:
 
-                print("Fewer than 5 open positions. Looking for new trading opportunities...")
+                print("[INFO] Fewer than 5 open positions. Looking for new trading opportunities...")
 
                 self.current_state = BotState.SEARCHING
 
             self.last_position_check = current_time
+
+
+
+
+
+def get_positions_details(exchange, symbol):
+
+    """Fetch total size and detailed open positions."""
+
+    state_manager = StateManager(exchange)
+
+    account_positions = state_manager.get_account_positions()
+
+    total_size = sum(abs(float(p.get('size', 0))) for p in account_positions)
+
+    position_details = [
+
+        {
+
+            'id': p.get('id', 'N/A'),
+
+            'symbol': p.get('symbol', 'N/A'),
+
+            'side': 'Long' if float(p.get('size', 0)) > 0 else 'Short',
+
+            'size': abs(float(p.get('size', 0))),
+
+        }
+
+        for p in account_positions if p.get('symbol') == symbol and abs(float(p.get('size', 0))) > 0
+
+    ]
+
+    return total_size, position_details

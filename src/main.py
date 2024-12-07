@@ -1,8 +1,8 @@
 import ccxt
 
-import pandas as pd
-
 import time
+
+import pandas as pd
 
 from datetime import datetime
 
@@ -32,11 +32,11 @@ def main():
 
     # Load configuration
 
-    config = load_config()
+    config = load_config() 
 
-    exchange = initialize_exchange()
+    phemex_futures = initialize_exchange()
 
-    state_manager = StateManager(exchange)
+    state_manager = StateManager(phemex_futures)
 
 
 
@@ -92,7 +92,7 @@ def main():
 
                     print("SELL condition met, executing sell order...")
 
-                    execute_trade("SELL", config['trade_parameters']['order_amount'], config, current_price)
+                    execute_trade("SELL", config['trade_parameters']['order_amount'], config, current_price, phemex_futures)
 
 
 
@@ -100,7 +100,7 @@ def main():
 
                     print("BUY condition met, executing buy order...")
 
-                    execute_trade("BUY", config['trade_parameters']['order_amount'], config, current_price)
+                    execute_trade("BUY", config['trade_parameters']['order_amount'], config, current_price, phemex_futures)
 
 
 
