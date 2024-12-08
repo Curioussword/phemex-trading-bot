@@ -12,8 +12,6 @@ POSITION_CHECK_INTERVAL = 180  # Interval to check positions (in seconds)
 
 
 
-
-
 # Bot States
 
 class BotState(Enum):
@@ -21,8 +19,6 @@ class BotState(Enum):
     SEARCHING = 1
 
     TRADING = 2
-
-
 
 
 
@@ -86,7 +82,7 @@ class StateManager:
 
 
 
-    def display_open_positions(self, symbol):
+    def display_open_positions(self, symbol, current_price):
 
         """Display open positions for a given symbol along with PnL and leverage."""
 
@@ -106,19 +102,49 @@ class StateManager:
 
         for position in positions:
 
-            pnl = float(position.get('cumClosedPnlEv', 0)) / 1e8
+            size = float(position.get('size', 0))
+
+            entry_price = float(position.get('avgEntryPrice', 0))
 
             leverage = float(position.get('leverage', 0))
 
+
+
+            # Calculate Realized PnL
+
+            realized_pnl = float(position.get('cumClosedPnlEv', 0)) / 1e8
+
+
+
+            # Calculate Unrealized PnL
+
+            unrealized_pnl = 0.0
+
+            if size != 0 and entry_price > 0:  # Ensure valid position data
+
+                if size > 0:  # Long position
+
+                    unrealized_pnl = (current_price - entry_price) * size
+
+                elif size < 0:  # Short position
+
+                    unrealized_pnl = (entry_price - current_price) * abs(size)
+
+
+
+            # Display position details
+
             print(f"Symbol: {position.get('symbol', 'N/A')}, "
 
-                  f"Side: {'Long' if float(position.get('size', 0)) > 0 else 'Short'}, "
+                  f"Side: {'Long' if size > 0 else 'Short'}, "
 
-                  f"Size: {abs(float(position.get('size', 0)))}, "
+                  f"Size: {abs(size)}, "
 
-                  f"Entry Price: {position.get('avgEntryPrice', 'N/A')}, "
+                  f"Entry Price: {entry_price:.2f}, "
 
-                  f"PnL: {pnl:.2f}, "
+                  f"Realized PnL: {realized_pnl:.2f}, "
+
+                  f"Unrealized PnL: {unrealized_pnl:.2f}, "
 
                   f"Leverage: {leverage:.2f}")
 
@@ -128,7 +154,7 @@ class StateManager:
 
 
 
-    def check_and_display_positions(self, symbol):
+    def check_and_display_positions(self, symbol, current_price):
 
         """Check and display open positions at specified intervals."""
 
@@ -136,7 +162,7 @@ class StateManager:
 
         if current_time - self.last_position_check >= self.position_check_interval:
 
-            open_position_count = self.display_open_positions(symbol)
+            open_position_count = self.display_open_positions(symbol, current_price)
 
             if open_position_count >= 5:
 
@@ -151,8 +177,6 @@ class StateManager:
                 self.current_state = BotState.SEARCHING
 
             self.last_position_check = current_time
-
-
 
 
 
@@ -185,3 +209,5 @@ def get_positions_details(exchange, symbol):
     ]
 
     return total_size, position_details
+
+
