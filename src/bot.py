@@ -10,11 +10,9 @@ from utils import load_config
 
 from exchange_setup import initialize_exchange
 
-from indicators import calculate_vwap, calculate_ema
+from indicators import calculate_vwap, calculate_ema, calculate_atr
 
 from state_manager import StateManager, get_positions_details
-
-
 
 
 
@@ -28,14 +26,16 @@ state_manager = StateManager(phemex_futures)
 
 MAX_SIZE = config['trade_parameters']['max_size']
 
+
 # Set leverage
 
-phemex_futures.set_leverage(45, 'BTC/USD:BTC')
-
+phemex_futures.set_leverage(20, 'BTC/USD:BTC')
 
 def fetch_live_data(symbol, limit=20):
 
     """Fetch live market data from Phemex and format it as a DataFrame."""
+
+
 
     try:
 
@@ -47,16 +47,21 @@ def fetch_live_data(symbol, limit=20):
 
         since = current_time - (limit * timeframe_ms)
 
-        
+
 
         # Fetch OHLCV data
 
         ohlcv = phemex_futures.fetch_ohlcv(symbol, timeframe='1m', since=since)
 
 
+
+        # Format OHLCV data into DataFrame
+
         data = pd.DataFrame(ohlcv, columns=["timestamp", "open", "high", "low", "close", "volume"])
 
-        
+
+
+        # Return raw data without additional processing
 
         return data
 
@@ -66,37 +71,54 @@ def fetch_live_data(symbol, limit=20):
 
         print(f"[ERROR] Failed to fetch live data: {e}")
 
-        return pd.DataFrame()
+        return pd.DataFrame()  # Return an empty DataFrame on failure
 
 
 
 
-def calculate_tp_sl(order_type, current_price):
+def calculate_tp_sl(order_type, current_price, atr, ema_20, ema_200):
 
-    """Calculate Take Profit and Stop Loss prices."""
+#    Dynamically calculate Take Profit and Stop Loss prices using ATR and EMA levels.
+#    Args:
+#        order_type (str): "BUY" or "SELL"
+#        current_price (float): Current market price
+#        atr (float): Average True Range for volatility adjustment
+#        ema_20 (float): 20 EMA level
+#        ema_200 (float): 200 EMA level
+#    Returns:
+#        tuple: (take_profit_price, stop_loss_price)
 
-    tp_percentage = 0.01  # 1% Take Profit
+ # Set ATR multipliers for risk/reward adjustment
 
-    sl_percentage = 0.01  # 1% Stop Loss
+    tp_multiplier = 1.5
 
-
-
-    if order_type == "SELL":
-
-        take_profit_price = current_price * (1 - tp_percentage)
-
-        stop_loss_price = current_price * (1 + sl_percentage)
-
-    elif order_type == "BUY":
-
-        take_profit_price = current_price * (1 + tp_percentage)
-
-        stop_loss_price = current_price * (1 - sl_percentage)
+    sl_multiplier = 1.5
 
 
 
-    return round(take_profit_price, 3), round(stop_loss_price, 2)
+    if order_type == "BUY":
 
+        # Use the higher of 20 EMA or ATR-adjusted SL as the stop-loss level
+
+        stop_loss_price = max(ema_20, current_price - (atr * sl_multiplier))
+
+        take_profit_price = current_price + (atr * tp_multiplier)
+
+
+
+    elif order_type == "SELL":
+
+        # Use the lower of 20 EMA or ATR-adjusted SL as the stop-loss level
+
+        stop_loss_price = min(ema_20, current_price + (atr * sl_multiplier))
+
+        take_profit_price = current_price - (atr * tp_multiplier)
+
+
+
+    # Ensure TP/SL values are rounded for precision
+
+    return round(take_profit_price, 2), round(stop_loss_price, 2)
 
 
 
@@ -107,6 +129,10 @@ def execute_trade(order_type, amount, config, current_price, exchange):
     try:
 
         symbol = config['trade_parameters']['symbol']
+
+
+
+        # Fetch positions details
 
         total_size, position_details = get_positions_details(exchange, symbol)
 
@@ -122,11 +148,43 @@ def execute_trade(order_type, amount, config, current_price, exchange):
 
 
 
-        take_profit_price, stop_loss_price = calculate_tp_sl(order_type, current_price)
+        # Fetch EMA levels and ATR for dynamic TP/SL
 
-        limit_price = round(current_price * (0.99 if order_type == "SELL" else 1.01), 5)
+        ema_20, ema_200, _ = fetch_live_data(symbol)  # Ensure this returns required data
+
+        atr = calculate_atr(symbol)  # Calculate ATR
 
 
+
+        if ema_20 is None or ema_200 is None or atr is None:
+
+            print("[ERROR] Failed to fetch necessary data for TP/SL calculation. Aborting trade.")
+
+            return
+
+
+
+        # Dynamically calculate TP and SL
+
+        take_profit_price, stop_loss_price = calculate_tp_sl(order_type, current_price, atr, ema_20, ema_200)
+
+
+
+        # Set limit price for the order
+
+        # Example with ATR
+
+        atr = calculate_atr(data)  # Ensure ATR is fetched
+
+        limit_price = round(current_price + (atr * (-1 if order_type == "SELL" else 1)), 5)
+
+        print(f"[DEBUG] Dynamic Limit Price for {order_type}: {limit_price}")
+
+
+
+
+
+        # Log TP/SL and limit price details
 
         print(f"[DEBUG] Setting Take Profit at {take_profit_price}")
 
@@ -136,7 +194,7 @@ def execute_trade(order_type, amount, config, current_price, exchange):
 
 
 
-        # Try placing a limit order
+        # Place the limit order
 
         try:
 
@@ -158,97 +216,87 @@ def execute_trade(order_type, amount, config, current_price, exchange):
 
             print("[INFO] Limit order placed. Waiting for execution...")
 
-            time.sleep(2)
+            time.sleep(5)
 
 
 
-            # Check if the order was filled
+            # Check order status and handle it
 
             order_status = exchange.fetch_order(order['id'], symbol)
 
             if order_status.get('status') != 'closed':
 
-                print("[INFO] Limit order not filled. Canceling and retrying as market order...")
+                print("[INFO] Limit order not filled. Canceling order...")
 
                 exchange.cancel_order(order['id'], symbol)
 
-                order = exchange.create_order(
+                print("[INFO] Limit order canceled. No fallback order placed.")
 
-                    symbol=symbol,
 
-                    type="market",
 
-                    side=order_type.lower(),
+        except Exception as order_error:
 
-                    amount=amount,
+            print(f"[ERROR] Failed to place or manage the limit order: {order_error}")
 
-                    params={"ordType": "Market"}
-
-                )
-
-        except Exception as e:
-
-            print(f"[ERROR] Error placing limit order: {e}")
-
-            print("[INFO] Switching to market order...")
-
-            order = exchange.create_order(
-
-                symbol=symbol,
-
-                type="market",
-
-                side=order_type.lower(),
-
-                amount=amount,
-
-                params={"ordType": "Market"}
-
-            )
+            return
 
 
 
         # Place Stop Loss and Take Profit orders
 
-        tp_sl_side = "buy" if order_type == "SELL" else "sell"
+        tp_sl_side = "BUY" if order_type == "SELL" else "SELL"
 
-        exchange.create_order(
+        try:
 
-            symbol=symbol,
+            # Stop Loss
 
-            type="stop",
+            exchange.create_order(
 
-            side=tp_sl_side,
+                symbol=symbol,
 
-            amount=amount,
+                type="stop",
 
-            price=stop_loss_price,
+                side=tp_sl_side.lower(),
 
-            params={"ordType": "Stop", "stopPx": stop_loss_price}
+                amount=amount,
 
-        )
+                price=stop_loss_price,
 
+                params={"ordType": "Stop", "stopPx": stop_loss_price}
 
+            )
 
-        exchange.create_order(
-
-            symbol=symbol,
-
-            type="limit",
-
-            side=tp_sl_side,
-
-            amount=amount,
-
-            price=take_profit_price,
-
-            params={"ordType": "LimitIfTouched", "stopPx": take_profit_price}
-
-        )
+            print(f"[INFO] Stop Loss order placed at {stop_loss_price}.")
 
 
 
-        print(f"Trade executed successfully: Size: {amount}, Symbol: {symbol}, ID: {order.get('id', 'N/A')}")
+            # Take Profit
+
+            exchange.create_order(
+
+                symbol=symbol,
+
+                type="limit",
+
+                side=tp_sl_side.lower(),
+
+                amount=amount,
+
+                price=take_profit_price,
+
+                params={"ordType": "LimitIfTouched", "stopPx": take_profit_price}
+
+            )
+
+            print(f"[INFO] Take Profit order placed at {take_profit_price}.")
+
+        except Exception as tp_sl_error:
+
+            print(f"[ERROR] Failed to place TP/SL orders: {tp_sl_error}")
+
+
+
+        # Log the trade details
 
         log_trade(order_type, amount, current_price, order)
 
@@ -257,6 +305,7 @@ def execute_trade(order_type, amount, config, current_price, exchange):
     except Exception as main_error:
 
         print(f"[ERROR] Critical error in execute_trade: {main_error}")
+
 
 
 
