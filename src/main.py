@@ -1,10 +1,14 @@
-import ccxt
-
 import time
+
+import json
+
+from datetime import datetime
 
 import pandas as pd
 
-from datetime import datetime
+import ccxt
+
+
 
 from utils import load_config
 
@@ -15,6 +19,52 @@ from indicators import calculate_vwap, calculate_ema
 from state_manager import StateManager
 
 from bot import fetch_live_data, execute_trade
+
+
+
+# Function to dynamically evaluate market volatility
+
+def determine_volatility(data):
+
+    """
+
+    Evaluate volatility based on price changes.
+
+    If market is volatile, return 1-minute intervals; otherwise, 5-minute.
+
+    """
+
+    try:
+
+        # Use percentage change in the closing price over the recent history
+
+        recent_close_prices = data["close"]
+
+        # Ensure there are at least N periods of data for calculation
+
+        if len(recent_close_prices) < 5:
+
+            return 5  # Default to 5 minutes if insufficient data
+
+        volatility_measure = abs(recent_close_prices.iloc[-1] - recent_close_prices.iloc[-5]) / recent_close_prices.iloc[-5]
+
+        # Threshold-based volatility measurement (tune the threshold if necessary)
+
+        if volatility_measure > 0.002:  # If >0.2% price change, market is volatile
+
+            return 1  # Switch to 1-minute intervals for fine-grained signals
+
+        else:
+
+            return 5  # Market is stable, stay on 5-minute intervals
+
+    except Exception as e:
+
+        print(f"[ERROR] Error in determine_volatility: {e}")
+
+        return 5  # Default back to 5 minutes if error occurs
+
+
 
 
 
@@ -84,11 +134,10 @@ def evaluate_market_conditions(data, config, current_price, phemex_futures):
 
             print("[INFO] No trade conditions met. Monitoring...")
 
-
-
     except Exception as e:
 
         print(f"[ERROR] An error occurred in evaluate_market_conditions: {e}")
+
 
 
 def main():
@@ -115,21 +164,25 @@ def main():
 
 
 
+    # Dynamic timeframe decision defaults
+
+    current_interval = 5  # Default to 5 minutes
+
+
+
     while True:
 
         try:
 
-            # Fetch live data
+            # Fetch live data dynamically
 
-            data = fetch_live_data(config['trade_parameters']['symbol'])
+            # Simulate dynamic switching based on market volatility
 
+            data = fetch_live_data(config['trade_parameters']['symbol'], interval=f"{current_interval}m", phemex_futures = phemex_futures)
 
+            if data.empty:
 
-            # Verify fetched data
-
-            if data.empty or "close" not in data.columns or data["close"].isna().all():
-
-                print("[ERROR] Data fetch failed or invalid data. Retrying in 60 seconds...")
+                print("[ERROR] No data fetched. Retrying in 60 seconds...")
 
                 time.sleep(60)
 
@@ -137,15 +190,15 @@ def main():
 
 
 
-            # Safely assign current_price only after validating live data
+            # Determine market volatility
 
-            current_price = data["close"].iloc[-1]
+            current_interval = determine_volatility(data)
 
 
 
-            # Check and display open positions only with valid current_price
+            # Check and display open positions
 
-            state_manager.check_and_display_positions(config['trade_parameters']['symbol'], current_price)
+            state_manager.check_and_display_positions(config['trade_parameters']['symbol'], data['close'].iloc[-1])
 
 
 
@@ -153,29 +206,11 @@ def main():
 
             open_positions = state_manager.get_open_positions(config['trade_parameters']['symbol'])
 
-
-
-            # Ensure room for new trades
-
             if len(open_positions) < 5 and len(trade_log) < config['trade_parameters']['max_orders_per_day']:
 
-                # Ensure we have valid live data
+                # Evaluate market conditions dynamically using the most recent live data
 
-                if data.empty:
-
-                    print("[ERROR] Data fetch failed. Retrying in 60 seconds...")
-
-                    time.sleep(60)
-
-                    continue
-
-
-
-                # Evaluate market conditions based on the fetched live data
-
-                evaluate_market_conditions(data, config, current_price, phemex_futures)
-
-
+                evaluate_market_conditions(data, config, data['close'].iloc[-1], phemex_futures)
 
             else:
 
@@ -183,7 +218,7 @@ def main():
 
 
 
-            # Wait before re-evaluating
+            # Wait until next fetch
 
             time.sleep(60)
 
@@ -193,7 +228,7 @@ def main():
 
             print("Exiting trading bot...")
 
-            break  # Gracefully exit on keyboard interrupt
+            break
 
 
 
@@ -202,7 +237,6 @@ def main():
             print(f"[ERROR] An unexpected error occurred: {e}")
 
             time.sleep(60)  # Retry after a delay
-
 
 
 

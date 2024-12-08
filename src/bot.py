@@ -31,37 +31,44 @@ MAX_SIZE = config['trade_parameters']['max_size']
 
 phemex_futures.set_leverage(20, 'BTC/USD:BTC')
 
-def fetch_live_data(symbol, limit=20):
-
-    """Fetch live market data from Phemex and format it as a DataFrame."""
-
+def fetch_live_data(symbol, interval="5m", phemex_futures=None):
 
 
     try:
 
-        # Current timestamp in milliseconds
+        # Ensure exchange object exists
 
-        current_time = int(time.time() * 1000)
+        exchange = phemex_futures or initialize_exchange()
 
-        timeframe_ms = 60 * 1000  # 1 minute in milliseconds
+        if exchange is None:
 
-        since = current_time - (limit * timeframe_ms)
-
-
-
-        # Fetch OHLCV data
-
-        ohlcv = phemex_futures.fetch_ohlcv(symbol, timeframe='1m', since=since)
+            raise ValueError("[ERROR] Could not initialize exchange object.")
 
 
 
-        # Format OHLCV data into DataFrame
+        # Dynamically compute the interval's range window
+
+        current_time = int(time.time() * 1000)  # Current time in milliseconds
+
+        timeframe_ms = {"1m": 60 * 1000, "5m": 5 * 60 * 1000}  # Convert minutes to milliseconds
+
+        since = current_time - (timeframe_ms[interval] * 100)
+
+
+
+        # Fetch OHLCV data using the interval and dynamic range
+
+        ohlcv = exchange.fetch_ohlcv(symbol, timeframe=interval, since=since)
+
+
+
+        # Structure the data into a DataFrame
 
         data = pd.DataFrame(ohlcv, columns=["timestamp", "open", "high", "low", "close", "volume"])
 
+        data["timestamp"] = pd.to_datetime(data["timestamp"], unit="ms")
 
 
-        # Return raw data without additional processing
 
         return data
 
@@ -71,7 +78,7 @@ def fetch_live_data(symbol, limit=20):
 
         print(f"[ERROR] Failed to fetch live data: {e}")
 
-        return pd.DataFrame()  # Return an empty DataFrame on failure
+        return pd.DataFrame()
 
 
 
